@@ -101,28 +101,46 @@
     }
 
     window.addEventListener('message', async function (event) {
-      if (event.source !== $('gasResponseFrame').contentWindow) return;
-      if (!event.origin.endsWith('googleusercontent.com') && !event.origin.endsWith('google.com')) return;
-      if (!event.data || event.data.type !== 'diwali-checkin-result') return;
-      let response;
-      try { response = JSON.parse(event.data.payload); }
-      catch (_) {
-        showResult('Could not read the server response. Please retry.', 'error');
-        processing = false; waitingForServer = false; return;
-      }
-      if (response.success) {
-        showResult('✅ ' + response.message + '\n\nGuest: ' + (response.name || ''), 'success');
-      } else {
-        showResult('❌ ' + (response.message || 'Check-in rejected.') + (response.name ? '\nGuest: ' + response.name : ''), 'error');
-      }
-      waitingForServer = false;
-      processing = false;
-      if (scanner) {
-        try { await scanner.clear(); } catch (_) {}
-        scanner = null;
-        $('reader').innerHTML = '';
-      }
-    });
+  if (!event.data || event.data.type !== 'diwali-checkin-result') {
+    return;
+  }
+
+  let response;
+
+  try {
+    response = typeof event.data.payload === 'string'
+      ? JSON.parse(event.data.payload)
+      : event.data.payload;
+  } catch (error) {
+    showResult('Could not read server response.', 'error');
+    processing = false;
+    waitingForServer = false;
+    return;
+  }
+
+  if (response.success) {
+    showResult(
+      '✅ ' + response.message + '\n\nGuest: ' + (response.name || ''),
+      'success'
+    );
+  } else {
+    showResult(
+      '❌ ' + (response.message || 'Check-in rejected.'),
+      'error'
+    );
+  }
+
+  waitingForServer = false;
+  processing = false;
+
+  if (scanner) {
+    try {
+      await scanner.clear();
+    } catch (error) {}
+    scanner = null;
+    $('reader').innerHTML = '';
+  }
+});
 
     $('startButton').addEventListener('click', startScanner);
     $('nextButton').addEventListener('click', function () { window.location.reload(); });
