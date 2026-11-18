@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Diwali Utsav 2026 – Guest Check-in</title>
+  <script src="https://unpkg.com/html5-qrcode"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin:0; padding:18px; background:#fff8e8; color:#38240d; font-family:Arial,sans-serif; text-align:center; }
+    .container { max-width:460px; margin:12px auto; padding:22px; background:#fff; border-radius:16px; box-shadow:0 3px 14px #0002; }
+    h2 { color:#9b5b12; margin-top:4px; }
+    input { width:100%; padding:14px; margin:12px 0; border:1px solid #ccc; border-radius:8px; font-size:17px; }
+    button { padding:13px 20px; border:0; border-radius:8px; background:#a45c0a; color:white; font-size:16px; cursor:pointer; }
+    button:disabled { opacity:.55; }
+    #reader { width:100%; margin-top:18px; }
+    #result { margin-top:18px; padding:15px; border-radius:10px; font-weight:bold; white-space:pre-wrap; }
+    .info { background:#fff0c2; color:#765000; }
+    .success { background:#d9f7df; color:#17652c; }
+    .error { background:#ffe0e0; color:#9b1717; }
+    .small { font-size:12px; color:#766; }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <h2>🪔 Diwali Utsav 2026</h2>
+    <p>Guest Entry &amp; QR Check-in</p>
+    <input id="pin" type="password" placeholder="Enter scanner PIN" autocomplete="off">
+    <br>
+    <button id="startButton" type="button">Start QR Scanner</button>
+    <div id="reader"></div>
+    <div id="result" class="info">Enter PIN and start scanning.</div>
+    <p><button id="nextButton" type="button">Next Guest / Scan Again</button></p>
+    <p class="small">Camera access is required. Open this page in Chrome over HTTPS.</p>
+  </main>
+
+  <!-- Hidden form + iframe sends a POST to Apps Script without browser CORS fetch. -->
+  <iframe name="gasResponseFrame" id="gasResponseFrame" hidden></iframe>
+  <form id="checkinForm" method="post" target="gasResponseFrame" hidden>
+    <input name="action" value="checkIn">
+    <input name="token" id="postToken">
+    <input name="pin" id="postPin">
+  </form>
+
+  <script>
+    // Apps Script web app deployment URL supplied by the organiser.
+    const API_URL = 'https://script.google.com/macros/s/AKfycbwJegavLs4R-XIabj0bH2xfz8_JE5utpuANyqq0qd4GI21ZWrZmNKTPvFGQ8pxr153p/exec';
+    let scanner = null;
+    let processing = false;
+    let waitingForServer = false;
+
+    const $ = id => document.getElementById(id);
+    function showResult(message, type) {
+      $('result').textContent = message;
+      $('result').className = type;
+    }
+
+    async function startScanner() {
+      if (!$('pin').value.trim()) {
+        showResult('Please enter scanner PIN.', 'error');
+        return;
+      }
+      if (typeof Html5QrcodeScanner === 'undefined') {
+        showResult('QR library did not load. Check internet and reload.', 'error');
+        return;
+      }
+      if (scanner) {
+        try { await scanner.clear(); } catch (_) {}
+        scanner = null;
+        $('reader').innerHTML = '';
+      }
+      processing = false;
+      scanner = new Html5QrcodeScanner('reader', {
+        fps: 10,
+        qrbox: { width: 240, height: 240 },
+        rememberLastUsedCamera: true
+      }, false);
+      scanner.render(onScanSuccess, function () {});
+      showResult('Choose the rear camera and allow camera access.', 'info');
+    }
+
+    function onScanSuccess(decodedText) {
+      if (processing || waitingForServer) return;
+      const token = String(decodedText || '').trim();
+      const pin = $('pin').value.trim();
+      if (!/^[a-f0-9-]{36,80}$/i.test(token)) {
+        showResult('Invalid QR code format.', 'error');
+        return;
+      }
+      if (!pin) {
+        showResult('Please enter scanner PIN.', 'error');
+        return;
+      }
+      processing = true;
+      waitingForServer = true;
+      $('postToken').value = token;
+      $('postPin').value = pin;
+      showResult('Validating invitation…', 'info');
+      $('checkinForm').action = API_URL;
+      $('checkinForm').submit();
+    }
+
+    window.addEventListener('message', async function (event) {
+      if (event.source !== $('gasResponseFrame').contentWindow) return;
+      if (!event.origin.endsWith('googleusercontent.com') && !event.origin.endsWith('google.com')) return;
+      if (!event.data || event.data.type !== 'diwali-checkin-result') return;
+      let response;
+      try { response = JSON.parse(event.data.payload); }
+      catch (_) {
+        showResult('Could not read the server response. Please retry.', 'error');
+        processing = false; waitingForServer = false; return;
+      }
+      if (response.success) {
+        showResult('✅ ' + response.message + '\n\nGuest: ' + (response.name || ''), 'success');
+      } else {
+        showResult('❌ ' + (response.message || 'Check-in rejected.') + (response.name ? '\nGuest: ' + response.name : ''), 'error');
+      }
+      waitingForServer = false;
+      processing = false;
+      if (scanner) {
+        try { await scanner.clear(); } catch (_) {}
+        scanner = null;
+        $('reader').innerHTML = '';
+      }
+    });
+
+    $('startButton').addEventListener('click', startScanner);
+    $('nextButton').addEventListener('click', function () { window.location.reload(); });
+  </script>
+</body>
+</html>
